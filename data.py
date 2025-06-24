@@ -46,7 +46,7 @@ def load_navier_stokes_tensor(
     if time_points is not None and time_points < data_tensor.shape[-1]:
         idx = np.linspace(0, data_tensor.shape[-1] - 1, num=time_points, dtype=int)
         data_tensor = data_tensor[..., idx]
-    return data_tensor.float() # (N, H, W, T)
+    return data_tensor.float()  # (N, H, W, T)
 
 
 class NavierStokesDataset(Dataset):
