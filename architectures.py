@@ -16,10 +16,12 @@ class PicardIterations(nn.Module):
             r (float): The relaxation parameter for the Picard step.
         """
         super().__init__()
-        self.modules = nn.Sequential(nn.ModuleList([PicardStep(module, q, r) for module in modules]))
+        self.steps = nn.ModuleList([PicardStep(module, q, r) for module in modules])
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return self.modules(x, *args, **kwargs)
+        for step in self.steps:
+            x = step(x, *args, **kwargs)
+        return x
 
 class PicardStep(nn.Module):
     """
@@ -47,7 +49,7 @@ class PicardStep(nn.Module):
 
 class ArbitraryIterations(nn.Module):
     """
-    Wrapper for nn.Sequential.
+    Apply a list of modules in sequence.
     """
     def __init__(self, modules: List[nn.Module]):
         """
@@ -55,10 +57,12 @@ class ArbitraryIterations(nn.Module):
             modules (List[nn.Module]): The list of modules to apply.
         """
         super().__init__()
-        self.modules = nn.Sequential(modules)
+        self.steps = nn.ModuleList(list(modules))
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
-        return self.modules(x, *args, **kwargs)
+        for step in self.steps:
+            x = step(x, *args, **kwargs)
+        return x
 
 def broadcast_initial_conditions(trajectories: torch.Tensor) -> torch.Tensor:
     """
