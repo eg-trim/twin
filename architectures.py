@@ -60,20 +60,20 @@ class ArbitraryIterations(nn.Module):
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         return self.modules(x, *args, **kwargs)
 
-def broadcast_initial_condition(trajectory: torch.Tensor) -> torch.Tensor:
+def broadcast_initial_condition(trajectories: torch.Tensor) -> torch.Tensor:
     """
     Broadcast the initial condition across the time dimension to make the trajectory constant over time.
     It is assumed that the time dimension is the second dimension of the tensor.
 
     Args:
-        trajectory (torch.Tensor): A tensor of shape (batch_size, time_steps, ...).
+        trajectories (torch.Tensor): A tensor of shape (batch_size, time_steps, ...).
 
     Returns:
         torch.Tensor: A tensor with the same shape as the input, with the initial condition
                       broadcast across the time dimension.
     """
-    initial_condition = trajectory[:, 0]
-    return initial_condition.expand_as(trajectory)
+    initial_condition = trajectories[:, 0, None, ...]
+    return initial_condition.expand_as(trajectories)
 
 def identity(x: torch.Tensor) -> torch.Tensor:
     return x
