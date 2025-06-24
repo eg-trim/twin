@@ -19,62 +19,34 @@ def clean_data(Data):
 def load_navier_stokes_tensor(
     mat_path: Path,
     *,
-    time_points: Optional[int] = None,
-) -> torch.Tensor:
-    """Load a .mat file produced by the FNO Navier–Stokes generator and return a
-    tensor with shape (N, H, W, T+1).
-
-    The .mat files contain two variables:
-        * ``u``  – velocity field of shape (H, W, T, N)
-        * ``a``  – scalar forcing term of shape (H, W, N)
-
-    We transpose the arrays such that the sample dimension comes first and we
-    concatenate the forcing field ``a`` in front of the temporal dimension so
-    that consumers can treat it as the *initial* channel.
-    """
+    time_points: Optional[int] = None) -> torch.Tensor:
     data = clean_data(loadmat(mat_path))
-    u_np = data["u"]  # (H, W, P-1, N)
-    a_np = data["a"]  # (H, W, N)
+    u_np = data["u"]  # (N, H, W, T'-1)
+    a_np = data["a"]  # (N, H, W)
 
-    u = torch.from_numpy(u_np)  # (N, H, W, P-1))
-    a = torch.from_numpy(a_np)[..., None]  # (N, H, W, 1))
+    u = torch.from_numpy(u_np)[..., None].permute(0, 3, 1, 2, 4)  # (N, T'-1, H, W, Q))  Q = 1
+    a = torch.from_numpy(a_np)[..., None, None].permute(0, 3, 1, 2, 4)  # (N, 1, H, W, Q))
 
     # ``a`` becomes the first time step
-    data_tensor = torch.cat([a, u], dim=-1)  # (N, H, W, P)
+    data_tensor = torch.cat([a, u], dim=1)  # (N, T', H, W, Q)
 
     # Optionally subsample the temporal dimension to `time_points` frames
-    if time_points is not None and time_points < data_tensor.shape[-1]:
+    if time_points is not None and time_points < data_tensor.shape[1]:
         idx = np.linspace(0, data_tensor.shape[-1] - 1, num=time_points, dtype=int)
-        data_tensor = data_tensor[..., idx]
-    return data_tensor.float()  # (N, H, W, T)
-
+        data_tensor = data_tensor[:, idx]
+    return data_tensor.float()  # (N, T, H, W, Q)
 
 class NavierStokesDataset(Dataset):
     def __init__(self, data: torch.Tensor):
         super().__init__()
-        self.data = data  # (N, H, W, T)
-
-        # Pre-compute flattened spatial coordinates in [0,1]
-        _, H, W, T = data.shape
-        row_coord = torch.linspace(0, 1, H)  # (H,)
-        col_coord = torch.linspace(0, 1, W)  # (W,)
-        t_coord = torch.linspace(0, 1, T)  # (T,)
-
-        # 3. Broadcast so every (query-token i, key-token j, time k) triple
-        #    gets the right positional triplet (row_i, col_j, t_k)
-        row_enc  = row_coord.view(H, 1, 1).expand(H, W, T)  # (H, W, T)
-        col_enc  = col_coord.view(1, W, 1).expand(H, W, T)  # (H, W, T)
-        time_enc = t_coord.view(1, 1, T).expand(H, W, T)  # (H, W, T)
-
-        # 4. Stack →  (H, W, T, 3)
-        self.encoding = torch.stack([row_enc, col_enc, time_enc], dim=-1)  # (H, W, T, 3)
+        self.data = data  # (N, T, H, W, Q)
 
     def __len__(self) -> int:
         return self.data.shape[0]
 
     def __getitem__(self, idx: int):
-        trajectory = self.data[idx]  # (H, W, T)
-        return trajectory, self.encoding  # (H, W, T), (H, W, T, 3)
+        trajectory = self.data[idx]  # (T, H, W, Q)
+        return trajectory
 
 
 def setup_dataloaders(tensor: torch.Tensor, *, batch_size: int, train_fraction: float = 0.8):
