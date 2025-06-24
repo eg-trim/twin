@@ -104,3 +104,30 @@ class AcausalTransformer(nn.Module):
 
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         return self.transformer(x, is_causal=False, *args, **kwargs)
+
+
+class SingleConvNeuralNet(nn.Module):
+    def __init__(self, dim, hidden_dim=32, out_dim=32,hidden_ff=64,K=[4,4],S=[4,4]):
+        super(SingleConvNeuralNet, self).__init__()
+        self.conv_layer1 = nn.Conv2d(dim, hidden_dim,
+                                     kernel_size=K,
+                                     stride=S)
+
+        self.fc1 = nn.Linear(hidden_dim, hidden_ff)
+        self.relu2 = nn.ReLU()
+        self.fc2 = nn.Linear(hidden_ff, out_dim)
+
+    def forward(self, x):
+        B, T, H, W, Q = x.shape
+
+        out = x.permute(0, 1, 4, 2, 3).reshape(B * T, Q, H, W)  # (B*T, Q, H, W)
+        out = self.conv_layer1(out)  # (B*T, hidden_dim, H', W')
+        out = out.permute(0, 2, 3, 1)  # (B*T, H', W', hidden_dim)
+
+        out = self.fc1(out)  # (B*T, H', W', hidden_ff)
+        out = self.relu2(out)  # (B*T, H', W', hidden_ff)
+        out = self.fc2(out)  # (B*T, H', W', out_dim)
+
+        _BT, H_prime, W_prime, C_out = out.shape
+        out = out.view(B, T, H_prime, W_prime, C_out)  # (B, T, H', W', out_dim)
+        return out
