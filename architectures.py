@@ -75,7 +75,7 @@ def broadcast_initial_condition(trajectory: torch.Tensor) -> torch.Tensor:
     initial_condition = trajectory[:, 0]
     return initial_condition.expand_as(trajectory)
 
-def Identity(x: torch.Tensor) -> torch.Tensor:
+def identity(x: torch.Tensor) -> torch.Tensor:
     return x
 
 def make_weight_shared_modules(make_module, n_modules: int) -> nn.Module:
