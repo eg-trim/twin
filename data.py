@@ -19,7 +19,7 @@ def clean_data(Data):
 def load_navier_stokes_tensor(
     mat_path: Path,
     *,
-    time_points: Optional[int] = None) -> torch.Tensor:
+    n_timesteps: Optional[int] = None) -> torch.Tensor:
     data = clean_data(loadmat(mat_path))
     u_np = data["u"]  # (N, H, W, T'-1)
     a_np = data["a"]  # (N, H, W)
@@ -30,9 +30,9 @@ def load_navier_stokes_tensor(
     # ``a`` becomes the first time step
     data_tensor = torch.cat([a, u], dim=1)  # (N, T', H, W, Q)
 
-    # Optionally subsample the temporal dimension to `time_points` frames
-    if time_points is not None and time_points < data_tensor.shape[1]:
-        idx = np.linspace(0, data_tensor.shape[1] - 1, num=time_points, dtype=int)
+    # Optionally subsample the temporal dimension to `n_timesteps` frames
+    if n_timesteps is not None and n_timesteps < data_tensor.shape[1]:
+        idx = np.linspace(0, data_tensor.shape[1] - 1, num=n_timesteps, dtype=int)
         data_tensor = data_tensor[:, idx]
     return data_tensor.float()  # (N, T, H, W, Q)
 
