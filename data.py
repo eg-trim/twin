@@ -32,7 +32,7 @@ def load_navier_stokes_tensor(
 
     # Optionally subsample the temporal dimension to `time_points` frames
     if time_points is not None and time_points < data_tensor.shape[1]:
-        idx = np.linspace(0, data_tensor.shape[-1] - 1, num=time_points, dtype=int)
+        idx = np.linspace(0, data_tensor.shape[1] - 1, num=time_points, dtype=int)
         data_tensor = data_tensor[:, idx]
     return data_tensor.float()  # (N, T, H, W, Q)
 
@@ -49,12 +49,12 @@ class NavierStokesDataset(Dataset):
         return trajectory
 
 
-def setup_dataloaders(tensor: torch.Tensor, *, batch_size: int, train_fraction: float = 0.8):
+def setup_dataloaders(tensor: torch.Tensor, batch_size: int, train_fraction: float = 0.8):
     dataset = NavierStokesDataset(tensor)
     n_train = int(len(dataset) * train_fraction)
     n_val = len(dataset) - n_train
     train_ds, val_ds = random_split(dataset, [n_train, n_val])
     return (
         DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True),
-        DataLoader(val_ds, batch_size=batch_size, shuffle=False, drop_last=False),
+        DataLoader(val_ds, batch_size=batch_size, shuffle=False, drop_last=True),
     )
