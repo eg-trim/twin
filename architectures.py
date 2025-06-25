@@ -1,7 +1,6 @@
 import torch
 import torch.nn as nn
 from typing import List
-from galerkin_transformer.model import *
 
 class PicardIterations(nn.Module):
     """
@@ -92,15 +91,13 @@ def make_weight_unshared_modules(make_module, n_modules: int) -> nn.Module:
 
 class BlockCausalTransformer(nn.Module):
     """A Transformer encoder whose causal mask is block-causal with respect to
-    temporal blocks. Each sequence is assumed to consist of ``n_timesteps``
-    contiguous time blocks, where each time block contributes an equal number
-    of spatial tokens. During self-attention a token may attend to all tokens
-    in the current and previous time steps, but not to any token in a future
-    timestep.
+    temporal blocks. Each sequence is assumed to consist of contiguous temporal
+    blocks where every block contains exactly ``block_size`` tokens. During
+    self-attention a token may attend to all tokens in the current and previous
+    time steps, but not to any token in a future timestep.
 
     Args:
-        n_timesteps (int): Number of temporal blocks (time steps) in the
-            sequence.
+        block_size (int): Number of tokens in each temporal block.
         d_model (int): Same as in ``nn.TransformerEncoderLayer``.
         nhead (int): Same as in ``nn.TransformerEncoderLayer``.
         dim_feedforward (int): Same as in ``nn.TransformerEncoderLayer``.
@@ -108,9 +105,9 @@ class BlockCausalTransformer(nn.Module):
         n_layers (int): Number of encoder layers.
     """
 
-    def __init__(self, n_timesteps: int, d_model: int, nhead: int, dim_feedforward: int, dropout: float, n_layers: int):
+    def __init__(self, block_size: int, d_model: int, nhead: int, dim_feedforward: int, dropout: float, n_layers: int):
         super().__init__()
-        self.n_timesteps = n_timesteps
+        self.block_size = block_size
         encoder_layer = nn.TransformerEncoderLayer(
             d_model=d_model,
             nhead=nhead,
@@ -121,19 +118,16 @@ class BlockCausalTransformer(nn.Module):
         self.transformer = nn.TransformerEncoder(encoder_layer, num_layers=n_layers)
 
     @staticmethod
-    def _generate_block_causal_mask(seq_len: int, n_timesteps: int, device: torch.device) -> torch.BoolTensor:
-        """Return a boolean attention mask of shape *(seq_len, seq_len)* where
-        *True* entries indicate **masked** (not visible) positions following
+    def _generate_block_causal_mask(seq_len: int, block_size: int, device: torch.device) -> torch.BoolTensor:
+        """Return a boolean attention mask of shape (seq_len, seq_len) where
+        True entries indicate **masked** (not visible) positions following
         the semantics of PyTorch's Transformer modules. The sequence is
-        assumed to consist of ``n_timesteps`` contiguous temporal blocks of
-        equal size.
+        assumed to consist of contiguous temporal blocks of equal ``block_size``.
         """
-        if seq_len % n_timesteps != 0:
+        if seq_len % block_size != 0:
             raise ValueError(
-                f"Sequence length {seq_len} is not divisible by the provided number of time steps {n_timesteps}."
+                f"Sequence length {seq_len} is not divisible by the provided block size {block_size}."
             )
-
-        block_size = seq_len // n_timesteps
 
         idx = torch.arange(seq_len, device=device)
         # Identify the timestep index of every token.
@@ -150,7 +144,7 @@ class BlockCausalTransformer(nn.Module):
 
         _, seq_len, _ = x.size()
 
-        attn_mask = self._generate_block_causal_mask(seq_len, self.n_timesteps, x.device)
+        attn_mask = self._generate_block_causal_mask(seq_len, self.block_size, x.device)
         return self.transformer(x, mask=attn_mask, *args, **kwargs)
 
 class AcausalTransformer(nn.Module):

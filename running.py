@@ -100,7 +100,7 @@ def train_one_epoch(model: nn.Module,
         running_loss += loss.item()
     return running_loss / len(loader)
 
-def evaluate(model: nn.Module,
+def evaluate_refinement(model: nn.Module,
              encoder: nn.Module,
              decoder: nn.Module,
              process_trajectory: Callable,
@@ -119,5 +119,49 @@ def evaluate(model: nn.Module,
                                process_trajectory,
                                trajectories)
             loss = F.mse_loss(outputs, trajectories)
+            running_loss += loss.item()
+    return running_loss / len(loader)
+
+def evaluate_autoregressive(model: nn.Module,
+                             encoder: nn.Module,
+                             decoder: nn.Module,
+                             process_trajectory: Callable,
+                             loader: DataLoader,
+                             ) -> float:
+    """Evaluate *causal* models by generating trajectories autoregressively.
+
+    At inference time we are given only the initial condition (time step 0).
+    The model must recursively generate subsequent frames one step at a time
+    using its own previous predictions as context.  This function implements
+    that procedure while respecting the SOS token convention used during
+    training (see :func:`prepend_zero_sos`).
+
+    The mean-squared error (MSE) between the fully generated trajectory and
+    the ground-truth trajectory is returned.
+    """
+    encoder.eval()
+    model.eval()
+    decoder.eval()
+
+    running_loss = 0.0
+    device = next(model.parameters()).device
+
+    with torch.no_grad():
+        for trajectories in loader:
+            trajectories = trajectories.to(device)
+            _, T, _, _, _ = trajectories.shape
+            generated = torch.zeros_like(trajectories)
+            generated[:, 0] = trajectories[:, 0]
+            for t in range(1, T):
+                current_input = generated.clone()
+                outputs = pipeline(
+                    model,
+                    encoder,
+                    decoder,
+                    process_trajectory,
+                    current_input,
+                )
+                generated[:, t] = outputs[:, t]
+            loss = F.mse_loss(generated, trajectories)
             running_loss += loss.item()
     return running_loss / len(loader)
