@@ -76,11 +76,11 @@ def broadcast_initial_conditions(trajectories: torch.Tensor) -> torch.Tensor:
         torch.Tensor: A tensor with the same shape as the input, with the initial condition
                       broadcast across the time dimension.
     """
-    initial_conditions = trajectories[:, 0, None, ...].clone()
+    initial_conditions = trajectories[:, 0, None, ...]
     return initial_conditions.expand_as(trajectories)
 
 def identity(x: torch.Tensor) -> torch.Tensor:
-    return x.clone()
+    return x
 
 def make_weight_shared_modules(make_module, n_modules: int) -> nn.Module:
     module = make_module()
