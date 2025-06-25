@@ -82,7 +82,9 @@ def train_one_epoch(model: nn.Module,
                     loader: DataLoader,
                     optim: torch.optim.Optimizer,
                     ) -> float:
+    encoder.train()
     model.train()
+    decoder.train()
     running_loss = 0.0
 
     for trajectories in loader:
@@ -104,7 +106,9 @@ def evaluate(model: nn.Module,
              process_trajectory: Callable,
              loader: DataLoader,
              ) -> float:
+    encoder.eval()
     model.eval()
+    decoder.eval()
     running_loss = 0.0
 
     with torch.no_grad():
