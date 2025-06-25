@@ -16,9 +16,24 @@ def make_positional_encoding(T, H, W, device: torch.device) -> torch.Tensor:
     out = torch.stack([time_enc, row_enc, col_enc], dim=-1)  # (H, W, T, P)
     return out.to(device)
 
-def format_input_for_model(trajectories: torch.Tensor, positional_encodings: torch.Tensor) -> torch.Tensor:
-    # (B, T, H, W, Q'), (B, T, H, W, P) -> (B, T * H * W, P+Q')
-    return torch.cat([positional_encodings, trajectories], dim=-1).flatten(start_dim=1, end_dim=3)
+def format_input_for_model(trajectories: torch.Tensor) -> torch.Tensor:
+    """Concatenate spatial–temporal tokens with their positional encodings and
+    flatten the (T, H, W) grid into a 1-D token sequence.
+
+    Args:
+        trajectories: Tensor of shape (B, T, H, W, Q).
+
+    Returns:
+        Tensor of shape (B, T·H·W, Q+P) suitable for ``CausalTransformer`` with
+        ``batch_first=True``.
+    """
+    B, T, H, W, _ = trajectories.shape
+    positional_encodings = make_positional_encoding(T, H, W, device=trajectories.device)
+    positional_encodings = positional_encodings.unsqueeze(0).expand(B, -1, -1, -1, -1)  # (B, T, H, W, P)
+    return (
+        torch.cat([positional_encodings, trajectories], dim=-1)
+        .flatten(start_dim=1, end_dim=3)  # (B, T·H·W, P+Q)
+    )
 
 def reformat_output_from_model(model_outputs: torch.Tensor, encoder_outputs: torch.Tensor) -> torch.Tensor:
     # (B, T*H'*W', P+Q'), (B, T, H', W', Q') -> (B, T, H'*W'*Q')
@@ -33,11 +48,10 @@ def pipeline(model: nn.Module,
              encoder: nn.Module,
              decoder: nn.Module,
              process_trajectory: Callable,
-             trajectories: torch.Tensor,
-             positional_encodings: torch.Tensor) -> torch.Tensor:
+             trajectories: torch.Tensor) -> torch.Tensor:
     encoder_inputs = process_trajectory(trajectories)  # (B, T, H, W, Q)
     encoder_outputs = encoder(encoder_inputs)  # (B, T, H', W', Q')
-    model_inputs = format_input_for_model(encoder_outputs, positional_encodings)  # (B, T*H'*W', P+Q')
+    model_inputs = format_input_for_model(encoder_outputs)  # (B, T*H'*W', P+Q')
     model_outputs = model(model_inputs)  # (B, T*H'*W', P+Q')
     decoder_inputs = reformat_output_from_model(model_outputs, encoder_outputs)  # (B, T, H'*W'*Q')
     decoder_outputs = decoder(decoder_inputs)  # (B, T, H, W, Q)
@@ -50,7 +64,7 @@ def train_one_epoch(model: nn.Module,
                     process_trajectory: Callable,
                     loader: DataLoader,
                     optim: torch.optim.Optimizer,
-                    positional_encodings: torch.Tensor):
+                    ) -> float:
     model.train()
     running_loss = 0.0
 
@@ -60,8 +74,7 @@ def train_one_epoch(model: nn.Module,
                            encoder,
                            decoder,
                            process_trajectory,
-                           trajectories,
-                           positional_encodings)
+                           trajectories)
         loss = F.mse_loss(outputs, trajectories)
         loss.backward()
         optim.step()
@@ -73,7 +86,7 @@ def evaluate(model: nn.Module,
              decoder: nn.Module,
              process_trajectory: Callable,
              loader: DataLoader,
-             positional_encodings: torch.Tensor) -> float:
+             ) -> float:
     model.eval()
     running_loss = 0.0
 
@@ -83,8 +96,7 @@ def evaluate(model: nn.Module,
                                encoder,
                                decoder,
                                process_trajectory,
-                               trajectories,
-                               positional_encodings)
+                               trajectories)
             loss = F.mse_loss(outputs, trajectories)
             running_loss += loss.item()
     return running_loss / len(loader)
