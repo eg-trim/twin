@@ -3,6 +3,7 @@ import torch.nn as nn
 from typing import Callable
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
+from architectures import model_is_causal
 
 def make_positional_encoding(T, H, W, device: torch.device) -> torch.Tensor:
     t_coord = torch.linspace(0, 1, T, device=device)  # (T,)
@@ -15,6 +16,19 @@ def make_positional_encoding(T, H, W, device: torch.device) -> torch.Tensor:
 
     out = torch.stack([time_enc, row_enc, col_enc], dim=-1)  # (H, W, T, P)
     return out.to(device)
+
+def prepend_zero_sos(encoder_outputs: torch.Tensor) -> torch.Tensor:
+    """Prepend a zero-filled start-of-sequence frame and drop the last frame.
+
+    Args:
+        encoder_outputs: Tensor of shape (B, T, H', W', Q').
+
+    Returns:
+        Tensor of the same shape with the sequence shifted right by one, i.e.
+        [SOS, X_{0}, … , X_{T-2}].
+    """
+    sos = torch.zeros_like(encoder_outputs[:, :1])  # (B,1,H',W',Q')
+    return torch.cat([sos, encoder_outputs[:, :-1]], dim=1)
 
 def format_input_for_model(trajectories: torch.Tensor) -> torch.Tensor:
     """Concatenate spatial–temporal tokens with their positional encodings and
@@ -51,6 +65,9 @@ def pipeline(model: nn.Module,
              trajectories: torch.Tensor) -> torch.Tensor:
     encoder_inputs = process_trajectory(trajectories)  # (B, T, H, W, Q)
     encoder_outputs = encoder(encoder_inputs)  # (B, T, H', W', Q')
+    if model_is_causal(model):
+        encoder_outputs = prepend_zero_sos(encoder_outputs)  # (B, T, H', W', Q')
+
     model_inputs = format_input_for_model(encoder_outputs)  # (B, T*H'*W', P+Q')
     model_outputs = model(model_inputs)  # (B, T*H'*W', P+Q')
     decoder_inputs = reformat_output_from_model(model_outputs, encoder_outputs)  # (B, T, H'*W'*Q')

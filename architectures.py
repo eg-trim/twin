@@ -89,7 +89,7 @@ def make_weight_shared_modules(make_module, n_modules: int) -> nn.Module:
 def make_weight_unshared_modules(make_module, n_modules: int) -> nn.Module:
     return nn.ModuleList([make_module() for _ in range(n_modules)])
 
-class CausalTransformer(nn.Module):
+class BlockCausalTransformer(nn.Module):
     """A Transformer encoder whose causal mask is *block-causal* with respect to
     temporal blocks. Each time step is assumed to contribute a contiguous block
     of ``spatial_tokens`` tokens in the sequence. During self-attention a token
@@ -161,6 +161,15 @@ class AcausalTransformer(nn.Module):
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         return self.transformer(x, is_causal=False, *args, **kwargs)
 
+def model_is_causal(model: nn.Module) -> bool:
+    """Return True if model or any of its sub-modules is a BlockCausalTransformer.
+    """
+    if isinstance(model, BlockCausalTransformer):
+        return True
+    for m in model.modules():
+        if isinstance(m, BlockCausalTransformer):
+            return True
+    return False
 
 class SingleConvNeuralNet(nn.Module):
     def __init__(self, dim, hidden_dim=32, out_dim=32,hidden_ff=64,K=[4,4],S=[4,4]):
