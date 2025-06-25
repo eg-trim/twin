@@ -1,6 +1,7 @@
 import torch
 import torch.nn as nn
 from typing import List
+from galerkin_transformer.model import *
 
 class _SimpleTransformerEncoderLayerWrapper(SimpleTransformerEncoderLayer):
     def forward(self, src, src_mask=None, src_key_padding_mask=None, is_causal=False):
