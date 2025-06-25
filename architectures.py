@@ -168,7 +168,6 @@ class AcausalTransformer(nn.Module):
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         return self.transformer(x, is_causal=False, *args, **kwargs)
 
-<<<<<<< HEAD
 def model_is_causal(model: nn.Module) -> bool:
     """Return True if model or any of its sub-modules is a BlockCausalTransformer.
     """
@@ -178,7 +177,6 @@ def model_is_causal(model: nn.Module) -> bool:
         if isinstance(m, BlockCausalTransformer):
             return True
     return False
-=======
 class SimpleTransformerEncoderLayer(nn.Module):
     def __init__(self,
                  d_model=96,
@@ -305,7 +303,6 @@ class GalerkinTransformer(nn.Module):
     def forward(self, x: torch.Tensor, *args, **kwargs) -> torch.Tensor:
         return self.transformer(x, is_causal=False, *args, **kwargs)
 
->>>>>>> c48d139 (add Galerkin Transformer class)
 
 class SingleConvNeuralNet(nn.Module):
     def __init__(self, dim, hidden_dim=32, out_dim=32,hidden_ff=64,K=[4,4],S=[4,4]):
