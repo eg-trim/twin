@@ -25,7 +25,7 @@ class AcausalPipeline(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:
         enc_out = self.encoder(init_cond.unsqueeze(1).repeat(1, 1 + traj.shape[1], 1, 1, 1))  # (B,T,H',W',C)
 
         # Build token sequence with positional encodings ----------------------------------
@@ -52,23 +52,23 @@ class CausalOSPipeline(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:
         traj_full = torch.cat([init_cond.unsqueeze(1), traj], dim=1)
         enc_full = self.encoder(traj_full)
 
         # Use frames 0 … T-2 as context
         enc_ctx  = enc_full[:, :-1]  # (B,T-1,Hp,Wp,C)
-        B, Tp1, Hp, Wp, C = enc_ctx.shape  # Tp1 = T-1
+        B, T, Hp, Wp, C = enc_ctx.shape
 
         # Tokens
-        pos = make_positional_encoding(Tp1, Hp, Wp, device=enc_ctx.device)
+        pos = make_positional_encoding(T, Hp, Wp, device=enc_ctx.device)
         pos = pos.unsqueeze(0).expand(B, -1, -1, -1, -1)
-        tokens = torch.cat([pos, enc_ctx], dim=-1).reshape(B, Tp1*Hp*Wp, C+3)
+        tokens = torch.cat([pos, enc_ctx], dim=-1).reshape(B, T*Hp*Wp, C+3)
 
         model_out = self.model(tokens)
         preds_enc = model_out[..., -C:]
-        preds_spatial = preds_enc.view(B, Tp1, Hp, Wp, C)
-        dec_in = preds_spatial.reshape(B, Tp1, Hp*Wp*C)
+        preds_spatial = preds_enc.view(B, T, Hp, Wp, C)
+        dec_in = preds_spatial.reshape(B, T, Hp*Wp*C)
         dec_out = self.decoder(dec_in)
 
         preds = dec_out.reshape_as(traj)
@@ -114,7 +114,6 @@ class CausalMSPipeline(nn.Module):
         self.step = _CausalMSStepPipeline(model, encoder, decoder)
 
     def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
-        # Build the sequence iteratively without in-place modification that breaks autograd
         frames = [init_cond]  # list of (B,H,W,Q)
 
         for _ in range(traj.shape[1]):
@@ -122,7 +121,6 @@ class CausalMSPipeline(nn.Module):
             next_frame = self.step(current_seq)
             frames.append(next_frame)
 
-        # Stack predicted frames excluding initial condition
         pred_traj = torch.stack(frames[1:], dim=1)  # (B,T-1,H,W,Q)
         return pred_traj
 
@@ -146,16 +144,16 @@ class Trainer:
         train_mode = optim is not None
 
         running_loss = 0.0
-        for init_cond, traj in loader:  # each batch split
+        for init_cond, traj in loader:
             if train_mode:
-                optim.zero_grad()  # type: ignore[arg-type]
+                optim.zero_grad()
 
-            preds = self.predict_fn(init_cond, traj)  # returns (B,T-1,...)
+            preds = self.predict_fn(init_cond, traj)
             loss = self.loss_fn(preds, traj)
 
             if train_mode:
                 loss.backward()
-                optim.step()  # type: ignore[arg-type]
+                optim.step() 
 
             running_loss += loss.item()
 
@@ -175,10 +173,6 @@ def build_trainer(kind: str,
                   decoder: nn.Module,
                   loss_fn: Callable = F.mse_loss,
                   ) -> Trainer:
-    """Factory returning a generic Trainer with appropriate prediction logic."""
-
-    kind = kind.lower()
-
     if kind == 'acausal':
         pipeline = AcausalPipeline(model, encoder, decoder)
         def predict_fn(init_cond: torch.Tensor, traj: torch.Tensor):
