@@ -66,7 +66,11 @@ def generate_bhpt_dataset(
     eps = np.finfo(float).eps
     q_low = q_min + eps
     q_high = q_max - eps
-    q_values = rng.uniform(q_low, q_high, size=n_samples)  # np.ndarray[float64]
+    # Sample q log-uniformly as we have a wide range
+    log_q_low = np.log(q_low)
+    log_q_high = np.log(q_high)
+    log_q_values = rng.uniform(log_q_low, log_q_high, size=n_samples)
+    q_values = np.exp(log_q_values)  # np.ndarray[float64]
 
     print("First 5 q values:", q_values[:5])
 
@@ -83,7 +87,7 @@ def generate_bhpt_dataset(
         n_timesteps = full_T
 
     for q in tqdm(q_values, desc="Generating waveforms"):
-        t, h_dict = bhptsur.generate_surrogate(q=q, M_tot=M_tot, dist_mpc=dist_mpc)
+        t, h_dict = bhptsur.generate_surrogate(q=q, M_tot=None, dist_mpc=None)
         assert len(t) == full_T, "Inconsistent timeline length returned by surrogate"
         h_plus, h_cross = _synthesize_polarisation(h_dict, modes)
         sample = np.stack([h_plus[idx], h_cross[idx]], axis=-1)  # (T, 2)
