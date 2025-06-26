@@ -18,7 +18,7 @@ import numpy as np
 import torch
 from tqdm import tqdm
 
-PATH_TO_BHPTNRSur = "/home/ubuntu/EG-CA/BHPTNRSurrogate"
+PATH_TO_BHPTNRSur = "/home/ubuntu/EG-UT/BHPTNRSurrogate"
 import sys
 sys.path.append(PATH_TO_BHPTNRSur)
 from surrogates import BHPTNRSur1dq1e4 as bhptsur
@@ -45,7 +45,12 @@ def generate_bhpt_dataset(
     M_tot: float = 60.0,
     dist_mpc: float = 100.0,
     n_timesteps: Optional[int] = None,
-    modes: Tuple[Tuple[int, int], ...] = ((2, 2),),
+    modes: Tuple[Tuple[int, int], ...] = (
+        (2, 2), (2, -2), (2, 1), (2, -1),
+        (3, 3), (3, -3), (3, 2), (3, -2), (3, 1), (3, -1),
+        (4, 4), (4, -4), (4, 3), (4, -3), (4, 2), (4, -2),
+        (5, 5), (5, -5), (5, 4), (5, -4), (5, 3), (5, -3),
+    ),
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate a synthetic dataset of gravitational waveforms.
 
@@ -68,7 +73,7 @@ def generate_bhpt_dataset(
     waveforms: List[np.ndarray] = []
 
     # First call to get canonical timeline length
-    t_ref, _ = bhptsur.generate_surrogate(q=q_values[0], M_tot=M_tot, dist_mpc=dist_mpc)
+    t_ref, _ = bhptsur.generate_surrogate(q=q_values[0], M_tot=None, dist_mpc=None)
     full_T = len(t_ref)
     # Pre-compute subsample indices if the user requests it
     if n_timesteps is not None and n_timesteps < full_T:
