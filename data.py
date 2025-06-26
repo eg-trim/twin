@@ -3,7 +3,7 @@ from scipy.io import loadmat
 import torch
 from torch.utils.data import Dataset, DataLoader, random_split
 from pathlib import Path
-from typing import Optional
+from typing import Optional, Tuple
 
 def get_filter_rows(data):
     reshaped_data = data.reshape(data.shape[0], -1)
@@ -64,3 +64,65 @@ def setup_dataloaders(a: torch.Tensor, u: torch.Tensor, batch_size: int, train_f
         DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True),
         DataLoader(val_ds, batch_size=batch_size, shuffle=False, drop_last=True),
     )
+
+
+class WaveformDataset(Dataset):
+    """Dataset for gravitational waveforms with conditional parameters."""
+    def __init__(self, waveforms: torch.Tensor, params: torch.Tensor):
+        super().__init__()
+        assert waveforms.shape[0] == params.shape[0], "Number of waveforms and parameters must match"
+        self.waveforms = waveforms  # (N, T, 1, 1, 2)
+        self.params = params      # (N, n_params)
+
+    def __len__(self) -> int:
+        return self.waveforms.shape[0]
+
+    def __getitem__(self, idx: int):
+        waveform = self.waveforms[idx]  # (T, 1, 1, 2)
+        param = self.params[idx]        # (n_params,)
+        return waveform, param
+
+
+def setup_waveform_dataloaders(
+    waveforms: torch.Tensor,
+    params: torch.Tensor,
+    batch_size: int,
+    train_fraction: float = 0.8
+):
+    """Sets up DataLoaders for waveform data with conditional parameters."""
+    dataset = WaveformDataset(waveforms, params)
+    n_train = int(len(dataset) * train_fraction)
+    n_val = len(dataset) - n_train
+    train_ds, val_ds = random_split(dataset, [n_train, n_val])
+    return (
+        DataLoader(train_ds, batch_size=batch_size, shuffle=True, drop_last=True),
+        DataLoader(val_ds, batch_size=batch_size, shuffle=False, drop_last=True),
+    )
+
+def load_bhpt_tensors(
+    mat_path: Path,
+    *,
+    n_timesteps: Optional[int] = None
+) -> Tuple[torch.Tensor, torch.Tensor]:
+    """Loads waveform and parameter tensors from a .mat file."""
+    from scipy.io import loadmat
+    import numpy as np
+
+    print(f"Loading data from {mat_path}...")
+    data = loadmat(mat_path)
+    h = data['h'].astype(np.float32)      # (N, T, 2)
+    q = data['q'].T.astype(np.float32)    # Transpose from (1,N) to (N,1)
+    print(f"  Loaded 'h' with shape: {h.shape}")
+    print(f"  Loaded and transposed 'q' with shape: {q.shape}")
+
+    waveforms_tensor = torch.from_numpy(h).unsqueeze(2).unsqueeze(2) # (N, T, 1, 1, 2)
+    params_tensor = torch.from_numpy(q)                            # (N, 1)
+
+    if n_timesteps is not None and n_timesteps < waveforms_tensor.shape[1]:
+        original_timesteps = waveforms_tensor.shape[1]
+        idx = np.linspace(0, original_timesteps - 1, num=n_timesteps, dtype=int)
+        waveforms_tensor = waveforms_tensor[:, idx]
+        print(f"  Subsampled time from {original_timesteps} to {waveforms_tensor.shape[1]} steps.")
+    
+    print(f"Final tensor shapes: waveforms={waveforms_tensor.shape}, params={params_tensor.shape}")
+    return waveforms_tensor, params_tensor
