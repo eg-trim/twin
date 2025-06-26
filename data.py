@@ -100,27 +100,21 @@ def setup_waveform_dataloaders(
     )
 
 def load_bhpt_tensors(
-    mat_path: Path,
+    pt_path: Path,
     *,
     n_timesteps: Optional[int] = None
 ) -> Tuple[torch.Tensor, torch.Tensor]:
-    """Loads waveform and parameter tensors from a .mat file."""
-    from scipy.io import loadmat
-    import numpy as np
-
-    print(f"Loading data from {mat_path}...")
-    data = loadmat(mat_path)
-    h = data['h'].astype(np.float32)      # (N, T, 2)
-    q = data['q'].T.astype(np.float32)    # Transpose from (1,N) to (N,1)
-    print(f"  Loaded 'h' with shape: {h.shape}")
-    print(f"  Loaded and transposed 'q' with shape: {q.shape}")
-
-    waveforms_tensor = torch.from_numpy(h).unsqueeze(2).unsqueeze(2) # (N, T, 1, 1, 2)
-    params_tensor = torch.from_numpy(q)                            # (N, 1)
+    """Loads waveform and parameter tensors from a .pt file."""
+    print(f"Loading data from {pt_path}...")
+    data = torch.load(pt_path)
+    waveforms_tensor = data["waveforms"]
+    params_tensor = data["params"]
+    print(f"  Loaded 'waveforms' with shape: {waveforms_tensor.shape}")
+    print(f"  Loaded 'params' with shape: {params_tensor.shape}")
 
     if n_timesteps is not None and n_timesteps < waveforms_tensor.shape[1]:
         original_timesteps = waveforms_tensor.shape[1]
-        idx = np.linspace(0, original_timesteps - 1, num=n_timesteps, dtype=int)
+        idx = torch.linspace(0, original_timesteps - 1, steps=n_timesteps, dtype=torch.long)
         waveforms_tensor = waveforms_tensor[:, idx]
         print(f"  Subsampled time from {original_timesteps} to {waveforms_tensor.shape[1]} steps.")
     
