@@ -40,7 +40,7 @@ class AcausalPipeline(nn.Module):
         preds_enc = model_out[..., -C:]  # last C dims
         preds_spatial = preds_enc.view(B, T, Hp, Wp, C)
         dec_in = preds_spatial.reshape(B, T, Hp*Wp*C)
-        dec_out = self.decoder(dec_in)  # (B,T,H,W,Q)
+        dec_out = self.decoder(dec_in)  # (B,T,H*W*Q)
 
         return dec_out[:, 1:].reshape_as(traj)
 
@@ -69,7 +69,7 @@ class CausalOSPipeline(nn.Module):
         preds_enc = model_out[..., -C:]
         preds_spatial = preds_enc.view(B, T, Hp, Wp, C)
         dec_in = preds_spatial.reshape(B, T, Hp*Wp*C)
-        dec_out = self.decoder(dec_in)
+        dec_out = self.decoder(dec_in)  # (B,T,H*W*Q)
 
         preds = dec_out.reshape_as(traj)
         return preds
@@ -95,7 +95,7 @@ class _CausalMSStepPipeline(nn.Module):
         preds_enc = model_out[..., -C:]
         preds_spatial = preds_enc.view(B, t, Hp, Wp, C)
         dec_in = preds_spatial.reshape(B, t, Hp*Wp*C)
-        dec_out = self.decoder(dec_in)
+        dec_out = self.decoder(dec_in)  # (B,t,H*W*Q)
 
         next_frame = dec_out[:, -1].reshape_as(current_sequence[:, 0])
         return next_frame
