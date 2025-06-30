@@ -218,5 +218,5 @@ class SingleConvNeuralNet(nn.Module):
         out = self.fc2(out)  # (B*T, H', W', out_dim)
 
         _BT, H_prime, W_prime, C_out = out.shape
-        out = out.view(B, T, H_prime, W_prime, C_out)  # (B, T, H', W', out_dim)
+        out = out.contiguous().view(B, T, H_prime, W_prime, C_out)  # (B, T, H', W', out_dim)
         return out

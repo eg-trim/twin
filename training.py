@@ -9,11 +9,11 @@ def make_positional_encoding(T, H, W, device: torch.device) -> torch.Tensor:
     row_coord = torch.linspace(0, 1, H, device=device)  # (H,)
     col_coord = torch.linspace(0, 1, W, device=device)  # (W,)
 
-    time_enc = t_coord.view(T, 1, 1).expand(T, H, W)  # (H, W, T)
-    row_enc  = row_coord.view(1, H, 1).expand(T, H, W)  # (H, W, T)
-    col_enc  = col_coord.view(1, 1, W).expand(T, H, W)  # (H, W, T)
+    time_enc = t_coord.view(T, 1, 1).expand(T, H, W)  # (T, H, W)
+    row_enc  = row_coord.view(1, H, 1).expand(T, H, W)  # (T, H, W)
+    col_enc  = col_coord.view(1, 1, W).expand(T, H, W)  # (T, H, W)
 
-    out = torch.stack([time_enc, row_enc, col_enc], dim=-1)  # (H, W, T, P)
+    out = torch.stack([time_enc, row_enc, col_enc], dim=-1)  # (T, H, W, P)
     return out.to(device)
 
 class AcausalPipeline(nn.Module):
