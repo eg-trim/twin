@@ -46,10 +46,7 @@ def generate_bhpt_dataset(
     dist_mpc: float = 100.0,
     n_timesteps: Optional[int] = None,
     modes: Tuple[Tuple[int, int], ...] = (
-        (2, 2), (2, -2), (2, 1), (2, -1),
-        (3, 3), (3, -3), (3, 2), (3, -2), (3, 1), (3, -1),
-        (4, 4), (4, -4), (4, 3), (4, -3), (4, 2), (4, -2),
-        (5, 5), (5, -5), (5, 4), (5, -4), (5, 3), (5, -3),
+        (2, 2),
     ),
 ) -> Tuple[torch.Tensor, torch.Tensor]:
     """Generate a synthetic dataset of gravitational waveforms.
@@ -83,14 +80,14 @@ def generate_bhpt_dataset(
     if n_timesteps is not None and n_timesteps < full_T:
         idx = np.linspace(0, full_T - 1, num=n_timesteps, dtype=int)
     else:
-        idx = slice(None)
+        idx = slice(4096)
         n_timesteps = full_T
 
     for q in tqdm(q_values, desc="Generating waveforms"):
         t, h_dict = bhptsur.generate_surrogate(q=q, M_tot=None, dist_mpc=None)
         assert len(t) == full_T, "Inconsistent timeline length returned by surrogate"
         h_plus, h_cross = _synthesize_polarisation(h_dict, modes)
-        sample = np.stack([h_plus[idx], h_cross[idx]], axis=-1)  # (T, 2)
+        sample = np.stack([h_plus[idx], h_cross[idx]], axis=-1) * 20
         sample = sample[..., None, None, :]  # (T, 1, 1, 2)
         waveforms.append(sample.astype(np.float32))
 

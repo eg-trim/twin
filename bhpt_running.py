@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from typing import Callable
+from typing import Callable, Optional
 from torch.utils.data import DataLoader
 import torch.nn.functional as F
 from architectures import model_is_causal
@@ -14,7 +14,7 @@ def make_positional_encoding(T: int, H: int, W: int, device: torch.device) -> to
 
     The encoding channels are normalised \(t, y, x\) coordinates in \[0,1\].
     """
-    t_coord = torch.linspace(0, 1, T, device=device)  # (T,)
+    t_coord = (torch.linspace(-10, 10, T, device=device))
     row_coord = torch.linspace(0, 1, H, device=device)  # (H,)
     col_coord = torch.linspace(0, 1, W, device=device)  # (W,)
 
@@ -86,95 +86,96 @@ def reformat_output_from_decoder(decoder_outputs: torch.Tensor, trajectories: to
 # Forward pipeline
 # -----------------------------
 
-def pipeline(
-    model: nn.Module,
-    encoder: nn.Module,
-    decoder: nn.Module,
-    process_trajectory: Callable[[torch.Tensor], torch.Tensor],
-    trajectories: torch.Tensor,
-    params: torch.Tensor,
-) -> torch.Tensor:
-    """End-to-end forward pass for conditional waveform refinement."""
-    encoder_inputs = process_trajectory(trajectories)  # (B, T, H, W, Q)
-    enc_out = encoder(encoder_inputs)  # (B, T, H', W', Q')
-    if model_is_causal(model):
-        enc_out = prepend_zero_sos(enc_out)
+class RefinementPipeline(nn.Module):
+    """Forward pass for conditional waveform refinement."""
 
-    model_in = format_input_for_model(enc_out, params)  # (B, T*H'*W', *)
-    model_out = model(model_in)  # (B, T*H'*W', *)
+    def __init__(self,
+                 model: nn.Module,
+                 encoder: nn.Module,
+                 decoder: nn.Module,
+                 process_trajectory: Callable[[torch.Tensor], torch.Tensor]):
+        super().__init__()
+        self.model = model
+        self.encoder = encoder
+        self.decoder = decoder
+        self.process_trajectory = process_trajectory
+        self.is_causal = model_is_causal(model)
 
-    dec_in = reformat_output_from_model(model_out, enc_out)  # (B, T, H'*W'*Q')
-    dec_out = decoder(dec_in)  # (B, T, H, W, Q)
+    def forward(self, trajectories: torch.Tensor, params: torch.Tensor) -> torch.Tensor:
+        """End-to-end forward pass for conditional waveform refinement."""
+        encoder_inputs = self.process_trajectory(trajectories)
+        enc_out = self.encoder(encoder_inputs)
+        if self.is_causal:
+            enc_out = prepend_zero_sos(enc_out)
 
-    return reformat_output_from_decoder(dec_out, trajectories)
+        model_in = format_input_for_model(enc_out, params)
+        model_out = self.model(model_in)
+
+        dec_in = reformat_output_from_model(model_out, enc_out)
+        dec_out = self.decoder(dec_in)
+
+        return reformat_output_from_decoder(dec_out, trajectories)
 
 
 # -----------------------------
 # Training / evaluation loops
 # -----------------------------
 
-def train_one_epoch(
-    model: nn.Module,
-    encoder: nn.Module,
-    decoder: nn.Module,
-    process_trajectory: Callable[[torch.Tensor], torch.Tensor],
-    loader: DataLoader,
-    optim: torch.optim.Optimizer,
-) -> float:
-    model.train(); encoder.train(); decoder.train()
-    running = 0.0
-    device = next(model.parameters()).device
+class Trainer:
+    """Generic trainer for conditional refinement models."""
+    def __init__(self,
+                 pipeline: RefinementPipeline,
+                 loss_fn: Callable = F.mse_loss):
+        self.pipeline = pipeline
+        self.loss_fn = loss_fn
+        self.device = next(pipeline.model.parameters()).device
 
-    for waveforms, params in loader:
-        waveforms, params = waveforms.to(device), params.to(device)
-        optim.zero_grad()
-        out = pipeline(model, encoder, decoder, process_trajectory, waveforms, params)
-        loss = F.mse_loss(out, waveforms)
-        loss.backward(); optim.step()
-        running += loss.item()
-    return running / len(loader)
-
-
-def evaluate_refinement(
-    model: nn.Module,
-    encoder: nn.Module,
-    decoder: nn.Module,
-    process_trajectory: Callable[[torch.Tensor], torch.Tensor],
-    loader: DataLoader,
-) -> float:
-    model.eval(); encoder.eval(); decoder.eval()
-    running = 0.0
-    device = next(model.parameters()).device
-
-    with torch.no_grad():
+    def _epoch(self, loader: DataLoader, optim: Optional[torch.optim.Optimizer] = None) -> float:
+        is_train = optim is not None
+        self.pipeline.train(is_train)
+        
+        running_loss = 0.0
         for waveforms, params in loader:
-            waveforms, params = waveforms.to(device), params.to(device)
-            out = pipeline(model, encoder, decoder, process_trajectory, waveforms, params)
-            running += F.mse_loss(out, waveforms).item()
-    return running / len(loader)
+            waveforms, params = waveforms.to(self.device), params.to(self.device)
+            if is_train:
+                optim.zero_grad()
+            
+            out = self.pipeline(waveforms, params)
+            loss = self.loss_fn(out, waveforms)
+            
+            if is_train:
+                loss.backward()
+                optim.step()
+            
+            running_loss += loss.item()
+            
+        return running_loss / len(loader)
 
+    def train_epoch(self, loader: DataLoader, optim: torch.optim.Optimizer) -> float:
+        return self._epoch(loader, optim)
 
-def evaluate_autoregressive(
-    model: nn.Module,
-    encoder: nn.Module,
-    decoder: nn.Module,
-    process_trajectory: Callable[[torch.Tensor], torch.Tensor],
-    loader: DataLoader,
-) -> float:
-    """Autoregressive evaluation for *causal* conditional models."""
-    model.eval(); encoder.eval(); decoder.eval()
-    running = 0.0
-    device = next(model.parameters()).device
+    def eval_epoch(self, loader: DataLoader) -> float:
+        with torch.no_grad():
+            return self._epoch(loader, None)
 
-    with torch.no_grad():
-        for waveforms, params in loader:
-            waveforms, params = waveforms.to(device), params.to(device)
-            _, T, _, _, _ = waveforms.shape
-            generated = torch.zeros_like(waveforms)
-            generated[:, 0] = waveforms[:, 0]
-            for t in range(1, T):
-                cur_in = generated.clone()
-                out = pipeline(model, encoder, decoder, process_trajectory, cur_in, params)
-                generated[:, t] = out[:, t]
-            running += F.mse_loss(generated, waveforms).item()
-    return running / len(loader)
+    def eval_autoregressive(self, loader: DataLoader) -> float:
+        """Autoregressive evaluation for *causal* conditional models."""
+        assert self.pipeline.is_causal, "Autoregressive evaluation only for causal models"
+        self.pipeline.train(False)
+        running_loss = 0.0
+        
+        with torch.no_grad():
+            for waveforms, params in loader:
+                waveforms, params = waveforms.to(self.device), params.to(self.device)
+                _, T, _, _, _ = waveforms.shape
+                generated = torch.zeros_like(waveforms)
+                generated[:, 0] = waveforms[:, 0]
+                
+                for t in range(1, T):
+                    cur_in = generated.clone()
+                    out = self.pipeline(cur_in, params)
+                    generated[:, t] = out[:, t]
+                
+                running_loss += self.loss_fn(generated, waveforms).item()
+                
+        return running_loss / len(loader)
