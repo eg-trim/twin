@@ -270,8 +270,8 @@ for epoch in range(1, args.epochs + 1):
     train_losses.append(train_loss)
     val_losses.append(val_loss)
     epoch_times.append(epoch_time)
-    
-    print(f"Epoch {epoch:3d} | train loss: {train_loss:.6f} | val loss: {val_loss:.6f} | time: {epoch_time:.2f}s")
+
+    print(f"{args.name} | Epoch {epoch:3d} | train loss: {train_loss:.6f} | val loss: {val_loss:.6f} | time: {epoch_time:.2f}s")
     
     # Save losses and times as numpy arrays every epoch in run directory
     np.save(run_dir / "train_loss.npy", np.array(train_losses))
