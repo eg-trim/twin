@@ -3,6 +3,7 @@ import torch.nn as nn
 import torch.nn.functional as F
 from typing import Callable
 from torch.utils.data import DataLoader
+from torch.nn.utils import clip_grad_norm_
 
 def make_positional_encoding(T, H, W, device: torch.device) -> torch.Tensor:
     t_coord = torch.linspace(0, 1, T, device=device)  # (T,)
@@ -100,7 +101,7 @@ class _CausalMSStepPipeline(nn.Module):
         next_frame = dec_out.reshape_as(last_frame)
         return next_frame
 
-    def train(self: nn.Module, mode: bool = True):  # type: ignore[override]
+    def train(self, mode: bool = True):
         super().train(mode)
         self.model.train(mode)
         self.encoder.train(mode)
@@ -135,9 +136,11 @@ class Trainer:
 
     def __init__(self,
                  predict_fn: Callable[[torch.Tensor, torch.Tensor], torch.Tensor],
-                 loss_fn: Callable = F.mse_loss):
+                 loss_fn: Callable = F.mse_loss,
+                 grad_clip_norm: float = 1.0):
         self.predict_fn = predict_fn
         self.loss_fn = loss_fn
+        self.grad_clip_norm = grad_clip_norm
 
     def _epoch(self, loader: DataLoader, optim: torch.optim.Optimizer | None) -> float:
         train_mode = optim is not None
@@ -152,6 +155,12 @@ class Trainer:
 
             if train_mode:
                 loss.backward()
+                # Apply gradient clipping if specified
+                if self.grad_clip_norm > 0:
+                    clip_grad_norm_(
+                        [p for p in optim.param_groups[0]['params'] if p.grad is not None],
+                        self.grad_clip_norm
+                    )
                 optim.step() 
 
             running_loss += loss.item()
