@@ -56,8 +56,8 @@ class CausalOSPipeline(nn.Module):
         traj_full = torch.cat([init_cond.unsqueeze(1), traj], dim=1)
         enc_full = self.encoder(traj_full)
 
-        # Use frames 0 … T-2 as context
-        enc_ctx  = enc_full[:, :-1]  # (B,T-1,Hp,Wp,C)
+        # Use frames 0 … T-1 as context
+        enc_ctx  = enc_full[:, :-1]  # (B,T,Hp,Wp,C)
         B, T, Hp, Wp, C = enc_ctx.shape
 
         # Tokens
@@ -82,22 +82,22 @@ class _CausalMSStepPipeline(nn.Module):
         self.encoder = encoder
         self.decoder = decoder
 
-    def forward(self, current_sequence: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+    def forward(self, last_frame: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
         # current_sequence shape: (B, t, H, W, Q)
-        enc_out = self.encoder(current_sequence)  # (B,t,Hp,Wp,C)
+        enc_out = self.encoder(last_frame)  # (B,t,Hp,Wp,C)
 
         B, t, Hp, Wp, C = enc_out.shape
         pos = make_positional_encoding(t, Hp, Wp, device=enc_out.device)
         pos = pos.unsqueeze(0).expand(B, -1, -1, -1, -1)
         tokens = torch.cat([pos, enc_out], dim=-1).reshape(B, t*Hp*Wp, C+3)
 
-        model_out = self.model(tokens)
+        model_out = self.model(tokens, use_kv_cache=True, update_kv_cache=True)
         preds_enc = model_out[..., -C:]
         preds_spatial = preds_enc.view(B, t, Hp, Wp, C)
         dec_in = preds_spatial.reshape(B, t, Hp*Wp*C)
         dec_out = self.decoder(dec_in)  # (B,t,H*W*Q)
 
-        next_frame = dec_out[:, -1].reshape_as(current_sequence[:, 0])
+        next_frame = dec_out.reshape_as(last_frame)
         return next_frame
 
     def train(self: nn.Module, mode: bool = True):  # type: ignore[override]
@@ -107,21 +107,20 @@ class _CausalMSStepPipeline(nn.Module):
         self.decoder.train(mode)
         return self
 
-
 class CausalMSPipeline(nn.Module):
     def __init__(self, model: nn.Module, encoder: nn.Module, decoder: nn.Module):
         super().__init__()
         self.step = _CausalMSStepPipeline(model, encoder, decoder)
 
     def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
-        frames = [init_cond]  # list of (B,H,W,Q)
+        frames = [init_cond.unsqueeze(1)]  # list of (B,1,H,W,Q)
 
         for _ in range(traj.shape[1]):
-            current_seq = torch.stack(frames, dim=1)  # (B,t,H,W,Q)
-            next_frame = self.step(current_seq)
+            last_frame = frames[-1]
+            next_frame = self.step(last_frame)
             frames.append(next_frame)
 
-        pred_traj = torch.stack(frames[1:], dim=1)  # (B,T-1,H,W,Q)
+        pred_traj = torch.cat(frames[1:], dim=1)  # (B,T,H,W,Q)
         return pred_traj
 
 class Trainer:
@@ -129,7 +128,7 @@ class Trainer:
 
     DataLoader must yield `(initial_conditions, trajectory)` where:
         initial_conditions : (B, H, W, Q)
-        trajectory         : (B, T-1, H, W, Q)  (frames 1 … T-1)
+        trajectory         : (B, T, H, W, Q)  (frames 1 … T)
 
     The trainer compares `predict_fn(init, traj)` against the same `traj`.
     """
@@ -166,26 +165,17 @@ class Trainer:
         return self._epoch(loader, None)
 
 
-def build_trainer(kind: str,
-                  *,
+def build_pipeline(kind: str,
                   encoder: nn.Module,
                   model: nn.Module,
                   decoder: nn.Module,
-                  loss_fn: Callable = F.mse_loss,
-                  ) -> Trainer:
+                  ) -> nn.Module:
     if kind == 'acausal':
         pipeline = AcausalPipeline(model, encoder, decoder)
-        def predict_fn(init_cond: torch.Tensor, traj: torch.Tensor):
-            return pipeline(init_cond, traj)
     elif kind == 'causal_one_step':
         pipeline = CausalOSPipeline(model, encoder, decoder)
-        def predict_fn(init_cond: torch.Tensor, traj: torch.Tensor):
-            return pipeline(init_cond, traj)
     elif kind == 'causal_many_steps':
         pipeline = CausalMSPipeline(model, encoder, decoder)
-        def predict_fn(init_cond: torch.Tensor, traj: torch.Tensor):
-            return pipeline(init_cond, traj)
     else:
         raise ValueError(f"Unknown trainer kind '{kind}'.")
-
-    return Trainer(predict_fn, loss_fn)
+    return pipeline
