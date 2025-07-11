@@ -27,6 +27,7 @@ class AcausalPipeline(nn.Module):
         self.decoder = decoder
 
     def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:
+        self.step.model.clear_kv_cache()
         enc_out = self.encoder(init_cond.unsqueeze(1).repeat(1, 1 + traj.shape[1], 1, 1, 1))  # (B,T,H',W',C)
 
         # Build token sequence with positional encodings ----------------------------------
@@ -54,6 +55,7 @@ class CausalOSPipeline(nn.Module):
         self.decoder = decoder
 
     def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:
+        self.step.model.clear_kv_cache()
         traj_full = torch.cat([init_cond.unsqueeze(1), traj], dim=1)
         enc_full = self.encoder(traj_full)
 
