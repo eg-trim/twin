@@ -114,6 +114,7 @@ class CausalMSPipeline(nn.Module):
         self.step = _CausalMSStepPipeline(model, encoder, decoder)
 
     def forward(self, init_cond: torch.Tensor, traj: torch.Tensor) -> torch.Tensor:  # type: ignore[override]
+        self.step.model.clear_kv_cache()  
         frames = [init_cond.unsqueeze(1)]  # list of (B,1,H,W,Q)
 
         for _ in range(traj.shape[1]):
