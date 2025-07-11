@@ -69,6 +69,7 @@ args = parser.parse_args()
 
 # %%
 # Create directory structure
+Path("runs").mkdir(exist_ok=True)
 base_dir = Path("runs/" + args.name)
 base_dir.mkdir(exist_ok=True)
 
