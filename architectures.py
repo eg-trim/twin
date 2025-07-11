@@ -28,6 +28,10 @@ class PicardIterations(nn.Module):
             x = step(x, *args, **kwargs)
         return x
 
+    def clear_kv_cache(self):
+        for step in self.steps:
+            step.model.clear_kv_cache()
+
 class PicardStep(nn.Module):
     """
     Regarding a model as an operator, this module performs a Picard iteration of that operator.
@@ -68,6 +72,10 @@ class ArbitraryIterations(nn.Module):
         for step in self.steps:
             x = step(x, *args, **kwargs)
         return x
+
+    def clear_kv_cache(self):
+        for step in self.steps:
+            step.clear_kv_cache()
 
 def broadcast_initial_conditions(trajectories: torch.Tensor) -> torch.Tensor:
     """
